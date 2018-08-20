@@ -6,12 +6,12 @@ import pandas as pd
 import socket
 import sys
 import numpy as np
-from hico.auxiliary import ConvLst2DT
+from .auxiliary import ConvLst2DT
 import os
 import getpass
 import platform
-import pathlib
 import re
+import pickle
 
 __version__ = "0.1"
 __author__ = "R. Healy & E. Karakoylu (erdem.m.karakoylu@nasa.gov)"
@@ -66,13 +66,61 @@ class MakePosVelQuatCSV:
         self.paramsDict['anglFileName'] = '%s_LonLatViewAngles.bil' % rootName
         self.paramsDict['csvName'] = hicoPtr.inpDict['csvFile']
         self.paramsDict['n_pixels'] = hicoPtr.L0.data['ns']
-        self.dfCSV = pd.read_csv(self.paramsDict['csvName'])
+        self.__ReadCSVFile()
         if do_nav_time_correction:
             self.__GetNavOffsetTimeCorrection(rootName)
         self.__FillPoVeQuDF()
         self.finishTime = DT.now()
         self.__WriteHeader2CSV()
         self.__WriteData2CSV()
+
+    def __ReadCSVFile(self):
+        usecols = ['USGNC_PS_Pointing_Coarse_Time_Tag',
+                   'USGNC_PS_Pointing_Inert_Posn_VectorX',
+                   'USGNC_PS_Pointing_Inert_Posn_VectorY',
+                   'USGNC_PS_Pointing_Inert_Posn_VectorZ',
+                   'USGNC_PS_Pointing_Inert_Vel_VectorX',
+                   'USGNC_PS_Pointing_Inert_Vel_VectorY',
+                   'USGNC_PS_Pointing_Inert_Vel_VectorZ',
+                   'USGNC_PS_Pointing_Current_Inert_Att_Quatrn_0',
+                   'USGNC_PS_Pointing_Current_Inert_Att_Quatrn_1',
+                   'USGNC_PS_Pointing_Current_Inert_Att_Quatrn_2',
+                   'USGNC_PS_Pointing_Current_Inert_Att_Quatrn_3',
+                   'USGNC_PS_PD_Fine_Pointing_Fine_Time_Tag',
+                   'HSTCLOCKTIME0', 'HSTATTITUDEQUATS',
+                   'HSTATTITUDESTATUSMODE',
+                   'HSTATTITUDEQUATX', 'HSTATTITUDEQUATY', 'HSTATTITUDEQUATZ',
+                   'HSTATTITUDETIME0', 'HSTATTITUDETIME1', '_ISSGPSTIME',
+                   'ISSTIMESUBSECOND', 'ICUTIMEGPSSECONDS',
+                   'ICUTIMEISSSUBSECOND', 'ICUTIMEHWREGSECOND',
+                   'ICUTIMEHWREGSUBSECOND', 'ISSTIMECENTURY',
+                   'ISSTIMEYEAR', 'ISSTIMEMONTH', 'ISSTIMEDAY', 'ISSTIMEHOUR',
+                   'ISSTIMEMINUTE', 'ISSTIMESECOND']
+
+        try:
+            self.dfCSV = pd.read_csv(self.paramsDict['csvName'],
+                                     usecols=usecols)
+        except ValueError:
+            print("badly formatted csv file - attempting to resolve")
+            ocsswroot = os.getenv('OCSSWROOT')
+            hicocaldir = os.path.join(ocsswroot, 'share/hico/cal')
+            col_name_file = os.path.join(hicocaldir, 'csv_columns.pkl')
+            try:
+                with open(col_name_file, 'rb') as f:
+                    col_names = pickle.load(f)
+            except FileNotFoundError:
+                print("column name file not found")
+                sys.exit(status=1)
+            try:
+                self.dfCSV = pd.read_csv(self.paramsDict['csvName'],
+                                         skiprows=1, names=col_names,
+                                         usecols=usecols)
+                print('csv format issue resolved')
+            except ValueError:
+                print("Something is wrong with the CSV file")
+                sys.exit(status=1)
+        with open('./Case_4_dfcsv.pkl', 'wb') as f:
+            pickle.dump(self.dfCSV, f)
 
     def __WriteHeader2CSV(self):
         with open(self.paramsDict['pvqFileName'], 'w') as fpvq:
@@ -232,6 +280,7 @@ class MakePosVelQuatCSV:
         column.
         """
         def GetDateTime(row):
+            row = row.astype(int)
             year = row['ISSTIMECENTURY'] * 100 + row['ISSTIMEYEAR']
             return DT(year, row['ISSTIMEMONTH'], row['ISSTIMEDAY'],
                       row['ISSTIMEHOUR'], row['ISSTIMEMINUTE'], row['ISSTIMESECOND'])

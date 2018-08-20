@@ -9,19 +9,18 @@ import sys
 import logging
 import os
 import pickle
-from csv import DictReader
 from collections import namedtuple as NT
-from numpy import array as nparray
 from numpy import ones as npones
 from numpy import float32
 
 __version__ = "2.1"
 
+
 def ParseCommandLine(args):
     '''Specifies command line arguments and parses command line accordingly.'''
     ocvarroot = os.getenv('OCVARROOT')
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
-                                     description="Generates a HICO L1B file from an L0 file.")
+                                     description="Generates a HICO L1B file from an L0 fileh.")
     parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__)
     parser.add_argument('-i', '--l0file', type=str, required='True',
                         help='iss*.hico.bil (required)')

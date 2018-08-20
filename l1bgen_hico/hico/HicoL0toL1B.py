@@ -15,16 +15,20 @@ NOTES ON THE IDL=>PYTHON TRANSLATION
 """
 import os
 import sys
-from datetime import datetime as DT
-from datetime import timedelta as TDel
-import calendar as cal
-import numpy as np
-from hico.HicoL0Reader import HicoL0Reader
-import math as m
-import logging
-from scipy import interpolate
 import time
 import functools
+import calendar as cal
+import math as m
+import logging
+import pickle
+from datetime import datetime as DT
+from datetime import timedelta as TDel
+
+import pandas as pd
+import numpy as np
+from scipy import interpolate
+
+from .HicoL0Reader import HicoL0Reader
 
 
 def TimeIt(func):
@@ -498,16 +502,35 @@ class HicoL0toL1b(object):
         return np.amax([np.where(v >= vec, np.arange(len(vec)), -1)
                         for v in vals], axis=1)
 
-    @staticmethod
-    def __GetCamTemp(csvFileName, timeData):
+    def __GetCamTemp(self, csvFileName, timeData):
         """
         READS CSV FILE
         """
-        import pandas as pd
+        use_columns = ["ISSTIMEYEAR", "ISSTIMEMONTH", "ISSTIMEDAY",
+                       "ISSTIMEHOUR", "ISSTIMEMINUTE", "ISSTIMESECOND",
+                       "HICOCAMERATEMP"]
         badval = -1
-        df = pd.read_csv(csvFileName, usecols=["ISSTIMEYEAR", "ISSTIMEMONTH", "ISSTIMEDAY",
-                                               "ISSTIMEHOUR", "ISSTIMEMINUTE", "ISSTIMESECOND",
-                                               "HICOCAMERATEMP"])
+        try:
+            df = pd.read_csv(csvFileName, usecols=use_columns)
+        except ValueError:
+            self.logger.warning("badly formatted csv file - attempting to resolve")
+            ocsswroot = os.getenv('OCSSWROOT')
+            hicocaldir = os.path.join(ocsswroot, 'share/hico/cal')
+            col_name_file = os.path.join(hicocaldir, 'csv_columns.pkl')
+            try:
+                with open(col_name_file, 'rb') as f:
+                    col_names = pickle.load(f)
+            except FileNotFoundError:
+                self.logger.error("column name file not found")
+                sys.exit(status=1)
+            try:
+                df = pd.read_csv(csvFileName, skiprows=1, names=col_names,
+                                 usecols=use_columns)
+                self.logger.info('csv format issue resolved')
+            except ValueError:
+                self.logger.error("Something is wrong with the CSV file")
+                sys.exit(status=1)
+
         x = df.loc[(df.ISSTIMEYEAR == (timeData.year % 100)) &
                    (df.ISSTIMEMONTH == (timeData.month)) &
                    (df.ISSTIMEDAY == (timeData.day)) &

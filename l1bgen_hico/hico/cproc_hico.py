@@ -5,17 +5,20 @@ Created on Nov 19, 2015
 @author: rhealy
 '''
 from netCDF4 import Dataset
+from .hicoLonLatHdr import hicoLonLatHdr
+from .astreduc import frac2DegMinSec
+from . import bore_sight as bore
+from . import read_pos_vel_quat as rquat
+import numpy as np
+import os
+import sys
+from . import astreduc as astreduc
+import pickle
 
-class hico_geo():
-    def __init__(self,ifile,earth_orient_file,leap_sec_file,boresight):
-        from hico.hicoLonLatHdr import hicoLonLatHdr
-        from hico.astreduc import frac2DegMinSec
-        import hico.bore_sight as bore
-        import hico.read_pos_vel_quat as rquat
-        import numpy as np
-        import os,sys
-        import struct
-        import hico.astreduc as astreduc
+case5_dir = '/accounts/ekarakoy/DEV-ALL/HICOPYTHON/InputFiles/FIVE_CASES/CASE_5/'
+
+class hico_geo:
+    def __init__(self, ifile, earth_orient_file, leap_sec_file, boresight):
 
         self.input_file = ifile
         self.earth_orient_file = earth_orient_file
@@ -37,7 +40,6 @@ class hico_geo():
             print("Typically it is set to $OCSSW/run/var.")
             sys.exit()
 
-
         bs = np.zeros((3))
         bs[0] = boresight[0]*deg2Rad
         bs[1] = boresight[1]*deg2Rad
@@ -52,26 +54,33 @@ class hico_geo():
     #    print('The CSV file is...' + getattr(quat_info,'Source CSV file'))
     #    print('Distance Unit =' + getattr(quat, 'Distance Unit'))
 
-        filein = "{}/hico/{}".format(ocvarroot,'nutation.dat')
+        filein = "{}/hico/{}".format(ocvarroot, 'nutation.dat')
     #    print(filein)
         nut_data = astreduc.initReduc(filein)
-        astrodate = astreduc.HicoSec2Date(pvq_data['SecondsSinceEpoch'][0])
-
-        yyyy = astrodate.yyyy % 100
+        astrodate = astreduc.get_astrodate(pvq_data['SecondsSinceEpoch'][0])
+        yyyy = astrodate.year % 100
 
         try:
-            pmx,pmy,dut1,loda = astreduc.getEDFData(earth_orient_file,yyyy,astrodate.mm,astrodate.dd)
+            with open(os.path.join(case5_dir, 'astrodate.pkl'), 'wb') as f:
+                pickle.dump(astrodate, f)
+            print("dd = ", astrodate.day)
+            pmx, pmy, dut1, loda = astreduc.getEDFData(earth_orient_file, yyyy,
+                                                       astrodate.month,
+                                                       astrodate.day)
     #        print(pmx,pmy,dut1,loda)
         except ValueError:
-            print("Earth Data File does not have year={},month={},day={}".format(astrodate.yyyy,astrodate.mm,astrodate.dd))
+            print("Earth Data File does not have year={},month={},day={}".format(astrodate.year,
+                                                                                astrodate.month,
+                                                                                astrodate.day))
+
             sys.exit()
 
         try:
-    #        print("Date={}/{}/{} {}:{}:{}".format(astrodate.yyyy,astrodate.mm,astrodate.dd,astrodate.hour,astrodate.min,astrodate.sec))
-            lsdat = astreduc.getLSData(leap_sec_file,astrodate.yyyy,astrodate.mm,astrodate.dd)
+    #        print("Date={}/{}/{} {}:{}:{}".format(astrodate.year,astrodate.month,astrodate.day,astrodate.hour,astrodate.min,astrodate.sec))
+            lsdat = astreduc.getLSData(leap_sec_file,astrodate.year,astrodate.month,astrodate.day)
     #        print('lsdat=' + str(lsdat))
         except ValueError:
-            print("Leap Sec File does not have year={},month={},day={}".format(astrodate.yyyy,astrodate.mm,astrodate.dd))
+            print("Leap Sec File does not have year={},month={},day={}".format(astrodate.year,astrodate.month,astrodate.day))
             sys.exit()
 
     # Define the rotation from HICO frame of reference to ISS frame of reference
@@ -156,8 +165,11 @@ class hico_geo():
             r_iss = np.multiply([pvq_data['ISSPOSX'][i],pvq_data['ISSPOSY'][i],pvq_data['ISSPOSZ'][i] ],0.3048e0) # convert to meeters
             q_iss = [ pvq_data['ISSQS'][i],pvq_data['ISSQX'][i],pvq_data['ISSQY'][i],pvq_data['ISSQZ'][i] ]
             rot_body = astreduc.quat_to_rot(q_iss)
-            astrodate = astreduc.HicoSec2Date(pvq_data['SecondsSinceEpoch'][i])
-            hico_jdate = astreduc.UT2time(astrodate.yyyy,astrodate.mm,astrodate.dd,astrodate.hour,astrodate.min,astrodate.sec,dut1,lsdat)
+            astrodate = astreduc.get_astrodate(pvq_data['SecondsSinceEpoch'][i])
+            hico_jdate = astreduc.UT2time(astrodate.year, astrodate.month,
+                                          astrodate.day, astrodate.hour,
+                                          astrodate.minute, astrodate.second,
+                                          dut1, lsdat)
             #print(hico_jdate.jdut1,hico_jdate.ttdb)
             prec = astreduc.precession(hico_jdate.ttdb)
             DeltaPsi, TrueEps, MeanEps, Omega, nut = astreduc.nutation(hico_jdate.ttdb,nut_data)
@@ -173,7 +185,13 @@ class hico_geo():
             v_ecef=np.dot(t_hico_to_ecef,svec)
             llh,view_zen,view_az = astreduc.wgs84_intercept(r_ecef,v_ecef)
 
-            sol_zen_az=rad2Deg*astreduc.solar_geometry(astrodate.yyyy,astrodate.mm,astrodate.dd,astrodate.hour,astrodate.min,astrodate.sec,llh[1,:],-llh[0,:])
+            sol_zen_az = rad2Deg * astreduc.solar_geometry(astrodate.year,
+                                                           astrodate.month,
+                                                           astrodate.day,
+                                                           astrodate.hour,
+                                                           astrodate.minute,
+                                                           astrodate.second,
+                                                           llh[1, :], -llh[0, :])
 
             self.lon[i,:] = np.array(llh[0,:])
             self.lat[i,:] = np.array(llh[1,:])
@@ -193,8 +211,9 @@ class hico_geo():
             # Below are some items for output header, grabbed near center of line
             # Populate the HICO header for output to the header file
             if i == self.lines/2-1:
-                hicoHeader.set_variable('date', '{ ' + str(astrodate.yyyy)+','+str(astrodate.mm)+','+str(astrodate.dd) + ' }')
-                hicoHeader.set_variable('time', '{ ' + str(astrodate.hour)+','+str(astrodate.min)+','+str(astrodate.sec) + ' }')
+                hicoHeader.set_variable('date', '{ ' + str(astrodate.year)+','
+                                        +str(astrodate.month)+','+str(astrodate.day) + ' }')
+                hicoHeader.set_variable('time', '{ ' + str(astrodate.hour)+','+str(astrodate.minute)+','+str(astrodate.second) + ' }')
                 hicoHeader.set_variable('image_center_long','{ ' + ', '.join( str(v) for v in frac2DegMinSec(np.abs(self.lon[i,254]),0.,0.)) + ' }')
                 hicoHeader.set_variable('image_center_lat', '{ ' + ', '.join( str(v) for v in frac2DegMinSec(np.abs(self.lat[i,254]),0.,0.)) + ' }')
                 hicoHeader.set_variable('image_center_long_hem', lonHemi[(self.lon[i,254]>=0)])

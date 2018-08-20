@@ -4,108 +4,38 @@ Created on Nov 24, 2015
 @author: rhealy (richard.healy@nasa.gov)
 
 '''
+import pandas as pd
 import numpy as np
-from scipy.constants.constants import year, day, minute
-from datetime import timezone
 import sys
+from datetime import datetime as DT
+from datetime import timedelta as TD
 
-MMM={'JAN':1,'FEB':2,'MAR':3,'APR':4,'MAY':5,'JUN':6,'JUL':7,'AUG':8,'SEP':9,'OCT':10,'NOV':11,'DEC':12}
 
-edf_delimiter = [2,2,2,9,3,9,9,1,9,9,3,10,10,1,7,7]
-edf_usecols = [0,1,2,5,8,11,14]
-edf_dtype = [np.int32,np.int32,np.int32,np.float64,np.float64,np.float64,np.float64]
-edf_names = ['year','month','day','pmx','pmy','ut1mutc','loda']
+MMM = {'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+       'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+       }
 
-ls_delimiter = [6,3,3,5,10,10,12]
-ls_usecols = [0,1,2,6]
-ls_dtype = [np.int32,(np.str_,3),np.int32,np.float64]
-ls_names = ['yfo','mco','dfo','taimutco']
+edf_delimiter = [2, 2, 2, 9, 3, 9, 9, 1, 9, 9, 3, 10, 10, 1, 7, 7]
+edf_usecols = [0, 1, 2, 5, 8, 11, 14]
+edf_dtype = [np.int32] * 3 + [np.float64] * 4
+edf_names = ['year', 'month', 'day', 'pmx', 'pmy', 'ut1mutc', 'loda']
+
+ls_delimiter = [6, 3, 3, 5, 10, 10, 12]
+ls_usecols = [0, 1, 2, 6]
+ls_dtype = [np.int32, (np.str_, 3), np.int32, np.float64]
+ls_names = ['yfo', 'mco', 'dfo', 'taimutco']
 
 rad2Deg = 180.0/np.pi
 deg2Rad = np.pi/180.0
 as2Deg = 1.0/3600.0
 as2Rad = as2Deg*deg2Rad
 
-if __name__ == '__main__':
-    import os
-    try:
-        ocvarroot = os.environ['OCVARROOT']
-    except KeyError:
-        print("OCSSW environement variable OCVARROOT not set.")
-        print("Typically it is set to $OCSSW/run/var.")
-        sys.exit()
-    filein = "{}/hico/{}".format(ocvarroot,'nutation.dat')
 
-    nut = initReduc(filein)
+def get_astrodate(delta_seconds):
+    d_epoch = DT(year=2009, month=1, day=1)
+    delta_t = TD(seconds=delta_seconds)
+    return d_epoch + delta_t
 
-    print(nut.head(10))
-
-class HicoSec2Date():
-    def __init__(self, delta):
-        # From MJM 2012/10/24 Adjusting the time from the epoch (2009-01-01-00:00:00 UTC).
-        # Input is GPS seconds since the epoch. Output is UTC date/time.
-        # adapted to python by RJH @ NASA 11/24/2015
-        mlen = np.array([31,28,31,30,31,30,31,31,30,31,30,31])
-        dinc=delta
-        idinc=np.floor(delta)
-        #Seconds since epoch of the (only) leap second so far
-        ls_2012_06_30 = 86400*((365*3)+(31+29+31+30+31+30))+1
-        # use epoch definition as start
-        self.yyyy=2009
-        self.mm=1
-        self.dd=1
-        self.hour= np.dtype('int32')
-        self.min = np.dtype('int32')
-        self.hour=0
-        self.min=0
-        self.sec=0.e0
-        if idinc > ls_2012_06_30:
-            #date after leap second, so adjust this to new epoch
-            self.yyyy=2012
-            self.mm=7
-            self.dd=1
-            idinc=idinc-ls_2012_06_30
-            dinc=dinc-ls_2012_06_30
-            self.hour=np.int(0)
-            self.min=np.int(0)
-            self.sec=0.e0
-
-        mm = self.mm
-        mmlen=mlen[mm - 1]
-        jdinc=np.dtype('int32')
-        while idinc >= 86400*mmlen:
-            if mm == 2:
-                if isLeapYear(self.yyyy) == 1:
-                    mmlen = mlen[mm-1]+1
-                else:
-                    mmlen = mlen[mm-1]
-            else:
-                mmlen = mlen[mm-1]
-            jdinc = 86400*mmlen
-            idinc=idinc-jdinc
-            dinc=dinc - 86400*mmlen
-            if mm != 12:
-                mm=mm+1
-            else:
-                mm=1
-                self.yyyy=self.yyyy+1
-
-        self.mm = mm
-# at this point, we have less a full month. Let's figure out how many whole days
-        nd=np.int(idinc/86400)
-        self.dd=self.dd+nd
-        idinc=idinc - 86400*nd
-        dinc=dinc - 86400*nd
-# Less than 24 hours left
-        self.hour=np.int(idinc/3600)
-        idinc=idinc - self.hour*3600
-        dinc=dinc - self.hour*3600
-# Less than 1 hour left
-        self.min=np.int(idinc/60)
-        idinc=idinc - self.min*60
-        dinc=dinc - self.min*60
-# Less than 1 minute left
-        self.sec=dinc
 
 def isLeapYear(yyyy):
     if (yyyy % 4) == 0:
@@ -117,33 +47,34 @@ def isLeapYear(yyyy):
             else:
                 leap=0
     else:
-        leap=0
+        leap = 0
 
     return leap
+
 
 def increment_seconds_to_date(delta):
     # From MJM 2012/10/24 Adjusting the time from the epoch (2009-01-01-00:00:00 UTC).
     # Input is GPS seconds since the epoch. Output is UTC date/time.
     # adapted to python by RJH @ NASA 11/24/2015
-    mlen = np.array([31,28,31,30,31,30,31,31,30,31,30,31])
-    dinc=delta
-    idinc=int(np.floor(delta))
-    #Seconds since epoch of the (only) leap second so far
+    mlen = np.array([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31])
+    dinc = delta
+    idinc = int(np.floor(delta))
+    # Seconds since epoch of the (only) leap second so far
     ls_2012_06_30 = 86400*((365*3)+(31+29+31+30+31+30))+1
-    #else use epoch definition as start
-    yyyy=2009
-    mm=1
-    dd=1
+    # else use epoch definition as start
+    yyyy = 2009
+    mm = 1
+    dd = 1
     if idinc > ls_2012_06_30:
         #date after leap second, so adjust this to new epoch
-        yyyy=2012
-        mm=7
-        dd=1
-        idinc=idinc-ls_2012_06_30
-        dinc=dinc-ls_2012_06_30
+        yyyy = 2012
+        mm = 7
+        dd = 1
+        idinc = idinc - ls_2012_06_30
+        dinc = dinc - ls_2012_06_30
 
-    mmlen=mlen[mm - 1]
-    jdinc=np.dtype('int32')
+    mmlen = mlen[mm - 1]
+    jdinc = np.dtype('int32')
     while idinc >= 86400*mmlen:
         if mm == 2:
             if isLeapYear(yyyy) == 1:
@@ -153,57 +84,65 @@ def increment_seconds_to_date(delta):
         else:
             mmlen = mlen[mm-1]
         jdinc = 86400*mmlen
-        dinc=dinc - 86400*mmlen
-        idinc=idinc-jdinc
+        dinc = dinc - 86400*mmlen
+        idinc = idinc - jdinc
         if mm != 12:
-            mm=mm+1
+            mm = mm + 1
         else:
-            mm=1
-            yyyy=yyyy+1
+            mm = 1
+            yyyy = yyyy + 1
 # at this point, we have less a full month. Let's figure out how many whole days
-    nd=int(idinc/86400)
-    dd=dd+nd
-    idinc=idinc - 86400*nd
-    dinc=dinc - 86400*nd
+    nd = int(idinc/86400)
+    dd = dd + nd
+    idinc = idinc - 86400*nd
+    dinc = dinc - 86400*nd
 # Less than 24 hours left
-    hour=int(idinc/3600)
-    idinc=idinc - hour*3600
-    dinc=dinc - hour*3600
+    hour = int(idinc/3600)
+    idinc = idinc - hour*3600
+    dinc = dinc - hour*3600
 # Less than 1 hour left
-    minute=int(idinc/60)
-    idinc=idinc - min*60
-    dinc=dinc - min*60
+    minute = int(idinc/60)
+    idinc = idinc - min*60
+    dinc = dinc - min*60
 # Less than 1 minute left
-    sec=dinc
+    sec = dinc
 
-    return yyyy,mm,dd,hour,minute,sec
+    return yyyy, mm, dd, hour, minute, sec
+
 
 def initReduc(filename):
-    import pandas as pd
-    Convrt= 0.0001e0/3600.0e0 # 0.0001 # to deg
-    nutation_data = pd.read_csv(filename,skiprows=110,skipfooter=552-216,skipinitialspace=True,sep=' ',
-                               names=['a1','a2','a3','a4','a5','A','B','C','D','NUM'], engine='python')
+    nutation_labels = ['a1', 'a2', 'a3', 'a4', 'a5', 'A', 'B', 'C', 'D', 'NUM']
+    Convrt = 0.0001e0/3600.0e0  # 0.0001 # to deg
+    nutation_data = pd.read_csv(filename, skiprows=110, skipfooter=552-216,
+                                skipinitialspace=True, delim_whitespace=True,
+                                names=nutation_labels, engine='python')
     nutation_data['A'] = nutation_data['A']*Convrt
     nutation_data['B'] = nutation_data['B']*Convrt
     nutation_data['C'] = nutation_data['C']*Convrt
     nutation_data['D'] = nutation_data['D']*Convrt
-
     return nutation_data
 
-def getEDFData(filename,year,mon,day):
-    return np.concatenate([ [row[3]*as2Rad,row[4]*as2Rad,row[5],row[6]/1000.] for row in parseEDFfile(filename) if (row[0] == year and row[1] == mon and row[2] == day )])
 
-def parseEDFfile(filename,skiphdr=0):
-    return np.genfromtxt(filename,skip_header=skiphdr,
-                         delimiter = edf_delimiter,
-                         usecols = edf_usecols,
-                         dtype = edf_dtype,
-                         names = edf_names)
+def getEDFData(filename, year, mon, day):
+    return np.concatenate([[row[3]*as2Rad, row[4]*as2Rad, row[5], row[6]/1000.]
+                           for row in parseEDFfile(filename)
+                           if (row[0] == year and row[1] == mon
+                               and row[2] == day)])
 
-def getLSData(filename,year,mon,day):
-    mdate=year*10000 + mon*100 + day
-    lsdat = np.concatenate([ [row[3]] for row in parseLSfile(filename,1) if (mdate > (row[0]*10000 + MMM[row[1]]*100 + row[2] ) )])
 
+def parseEDFfile(filename, skiphdr=0):
+    return np.genfromtxt(filename, skip_header=skiphdr,
+                         delimiter=edf_delimiter,
+                         usecols=edf_usecols,
+                         dtype=edf_dtype,
+                         names=edf_names)
+
+
+def getLSData(filename, year, mon, day):
+    mdate = year * 10000 + mon*100 + day
+    lsdat = np.concatenate([[row[3]] for row in parseLSfile(filename, 1)
+                            if (mdate > (row[0]*10000 + MMM[row[1]]*100 + row[2])
+                                )])
     return lsdat[-1]
 
 def parseLSfile(filename,skiphdr=0):
@@ -213,7 +152,7 @@ def parseLSfile(filename,skiphdr=0):
                          dtype = ls_dtype,
                          names = ls_names)
 
-''''
+'''
 converted to python by R. Healy 11/27/2015
 * ----------------------------------------------------------------------------
 *

@@ -1,0 +1,15 @@
+*.pyc
+
+*.ipynb
+
+*.L1B_ISS
+
+*.csv
+
+*.hdr
+
+*.pkl
+
+InputFiles/
+
+HicoTest/
