@@ -5,6 +5,8 @@ updated 11/23/2015
 @author: rhealy
 '''
 import numpy as np
+import pandas as pd
+import sys
 
 class QuatHeader:
 
@@ -24,9 +26,10 @@ def checkData(indata,X,Y,Z,scl,lower,upper):
     rsltz = (indata[Z]*scl)**2
     sumsqrs = np.sqrt(rsltx+rslty+rsltz)
     idx = (sumsqrs > upper) | (sumsqrs < lower)
-    if idx.any() :
+    if idx.any():
         badResult = True
     return badResult
+
 
 def checkQData(indata):
     badResult = False
@@ -36,23 +39,28 @@ def checkQData(indata):
     rslts = (indata['ISSQS'])**2
     sumsqrs = np.sqrt(rsltx+rslty+rsltz+rslts) - 1.0
     idx = (np.abs(sumsqrs) > 0.01)
-    if idx.any() :
+    if idx.any():
         badResult = True
     return badResult
 
+
+def print_warning_msg(header, filename, exit_flag):
+    print('PLEASE CHECK FILE: {}'.format(filename))
+    print('And its source files: \n{}\n{}\n'.format(header['Source CSV file'],
+                                                    header['Subset CSV file']))
+    sys.exit(exit_flag)
+
+
 def read_pos_vel_quat(filename):
-    import pandas as pd
-    import sys
-    re=6378137e0    # WGS-84
-    lower=re + 2.5e5
-    upper=re + 5.e5 # upper and lower bounds for ISS in m wrt WGS-84
+    re = 6378137e0    # WGS-84
+    lower = re + 2.5e5
+    upper = re + 5.e5 # upper and lower bounds for ISS in m wrt WGS-84
     header = {}
     quat = QuatHeader()
-    lcnt= 0
+    lcnt = 0
     cnt = 0
     for theLine in open(filename,'r') :
         cnt += 1
-        #print(lcnt)
         fields = theLine.split(',')
         if len(fields) > 1 and len(fields) < 10 and  'This field is currently' not in fields and 'SecondsSinceEpoch' not in fields:
             header[fields[0]] = ''.join(fields[1]).strip()
@@ -62,30 +70,22 @@ def read_pos_vel_quat(filename):
             lcnt = cnt - 1
     pvq_data = pd.read_csv(filename,skiprows=lcnt,skipinitialspace=True)
     if np.isnan(pvq_data['ISSPOSX']).any() or np.isnan(pvq_data['ISSPOSY']).any() or np.isnan(pvq_data['ISSPOSZ']).any():
-        print('Returning; NaN detected in input position')
-        print('PLEASE CHECK FILE: {}'.format(filename))
-        print('And its source files: \n{}\n{}\n'.format(header['Source CSV file'],header['Subset CSV file']))
-        sys.exit()
+        flag_str = 'Returning; NaN detected in input position'
+        print_warning_msg(header, filename, exit_flag=flag_str)
     if np.isnan(pvq_data['ISSQX']).any() or np.isnan(pvq_data['ISSQY']).any() or np.isnan(pvq_data['ISSQZ']).any():
-        print('Returning; NaN detected in input quaternion')
-        print('PLEASE CHECK FILE: {}'.format(filename))
-        print('And its source files: \n{}\n{}\n'.format(header['Source CSV file'],header['Subset CSV file']))
-        sys.exit()
-    if checkData(pvq_data,'ISSPOSX','ISSPOSY','ISSPOSZ',.3048,lower,upper):
-        print('ERROR: POSITIONS ARE BELOW 200 km above WGS-84 or above 500 km above WGS-84!!!!')
-        print('PLEASE CHECK FILE: {}'.format(filename))
-        print('And its source files: \n{}\n{}\n'.format(header['Source CSV file'],header['Subset CSV file']))
-        sys.exit()
+        flag_str = 'Returning; NaN detected in input quaternion'
+        print_warning_msg(header, filename,
+                          exit_flag=flag_str)
+    if checkData(pvq_data, 'ISSPOSX', 'ISSPOSY', 'ISSPOSZ', .3048,
+                 lower, upper):
+        flag_str = 'ERROR: POSITIONS ARE BELOW 200 km above WGS-84 or above 500 km above WGS-84!!!!'
+        sys.exit(header, filename, exit_flag=flag_str)
     if checkData(pvq_data,'ISSVELX','ISSVELY','ISSVELZ',.3048,6500.0,9000.0):
-        print('ERROR: ISS velocity out of range!')
-        print('PLEASE CHECK FILE: {}'.format(filename))
-        print('And its source files: \n{}\n{}\n'.format(header['Source CSV file'],header['Subset CSV file']))
-        sys.exit()
+        flag_str = 'ERROR: ISS velocity out of range!'
+        sys.exit(exit_flag=flag_str)
     if checkQData(pvq_data):
-        print('ERROR: Interpolated ISS USGNC quaternions are far from normalized!')
-        print('PLEASE CHECK FILE: {}'.format(filename))
-        print('And its source files: \n{}\n{}\n'.format(header['Source CSV file'],header['Subset CSV file']))
-        sys.exit()
+        flag_str = 'ERROR: Interpolated ISS USGNC quaternions are far from normalized!'
+        sys.exit(exit_flag=flag_str)
     # Now, the times in the HICO files are in seconds since 2009-Jan01-00:00:00 UTC.
     # N.B. The original files have GPS times in them, and the file interpolate_fields_to_hico_times.pro
     # calculates the GPS second for the above UTC date, and subtracts it form the GPS times in the files.
@@ -101,12 +101,4 @@ def read_pos_vel_quat(filename):
         print('Epoch is not the expected epoch.')
         sys.exit()
 
-    return header,quat,pvq_data
-
-if __name__ == '__main__':
-
-    (quat_info, quat, pvq_data) = read_pos_vel_quat('iss.2013067.0308.063527.L0.12933.20130308205743.hico_pos_vel_quat.csv')
-    print('The CSV file is...' + quat_info['Source CSV file'])
-    print('Theta = ' + quat_info['Theta (degrees from stowed position)'])
-# print('The CSV file is...' + getattr(quat_info,'Source CSV file'))
-    print('Distance Unit =' + getattr(quat, 'Distance Unit'))
+    return header, quat, pvq_data

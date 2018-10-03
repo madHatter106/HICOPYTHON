@@ -12,6 +12,7 @@ import getpass
 import platform
 import re
 import pickle
+from warnings import filterwarnings
 
 __version__ = "0.1"
 __author__ = "R. Healy & E. Karakoylu (erdem.m.karakoylu@nasa.gov)"
@@ -21,6 +22,7 @@ __date__ = "2/3/2017"
 class MakePosVelQuatCSV:
 
     def __init__(self, hicoPtr, **kwargs):
+        filterwarnings('error', category=UserWarning)
         gps_time = DT(1980, 1, 6, 0, 0, 0)
         sec_per_count = 1.117460459e-6
         secOffset = TDel(seconds=15)
@@ -119,7 +121,7 @@ class MakePosVelQuatCSV:
             except ValueError:
                 print("Something is wrong with the CSV file")
                 sys.exit(status=1)
-        with open('./Case_4_dfcsv.pkl', 'wb') as f:
+        with open('./Case_1_dfcsv.pkl', 'wb') as f:
             pickle.dump(self.dfCSV, f)
 
     def __WriteHeader2CSV(self):
@@ -259,6 +261,7 @@ class MakePosVelQuatCSV:
         ditp = pd.DataFrame(dict(time=timeInGrid, pvq=pvqOutGrid))
         ditp.drop_duplicates(subset='time', inplace=True)
         ditp.sort_values('time', inplace=True)
+        ditp.to_pickle('./case1_ditp.pickle')
         return UVS(ditp.time.values, ditp.pvq.values)
 
     @staticmethod
@@ -285,11 +288,13 @@ class MakePosVelQuatCSV:
             return DT(year, row['ISSTIMEMONTH'], row['ISSTIMEDAY'],
                       row['ISSTIMEHOUR'], row['ISSTIMEMINUTE'], row['ISSTIMESECOND'])
 
-        hsdat = pd.DataFrame(columns=['datetime', ])
+        #hsdat = pd.DataFrame(columns=['datetime', ])
         cols2copy = ['ICUTIMEGPSSECONDS', 'ICUTIMEISSSUBSECOND',
                      'ICUTIMEHWREGSECOND', 'ICUTIMEHWREGSUBSECOND']
         hsdat = self.dfCSV[cols2copy].copy()
-        hsdat['datetime'] = self.dfCSV.apply(GetDateTime, axis=1)
+        hsdat['datetime'] = self.dfCSV.filter(regex='ISSTIME',
+                                              axis=1).apply(GetDateTime,
+                                                            axis=1)
         try:
             np.testing.assert_array_equal(hsdat.datetime.values, np.sort(hsdat.datetime.values))
         except AssertionError:

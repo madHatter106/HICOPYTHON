@@ -186,16 +186,19 @@ def HicoMain(args):
     mainLogger.info("Running geolocation...")
     hicogeo = hico_geo(pvqcsv, earth_orient_file, leap_sec_file,
                        pArgs.boresight)
-    mainLogger.info("Writing to netcdf...")
-    # Record processed data
-    sceneID = str(hc.L0.header['ID'])
-    scene_location = GetLocation(sceneID, mainLogger)
-    with Dataset(pArgs.ofile, 'w', format='NETCDF4') as root_grp:
-        ncGroups = FillNC(root_grp, scene_location=scene_location)
-        hc.WriteRadFile(ncGroups.productsGrp, ncGroups.periodGrp)
-        # hc.FillWriteFlags(usefulGroups.slaGrp) -- seemingly not needed to be discarded(?)
-        hicogeo.write_geo_nc(ncGroups.navGrp, ncGroups.calGrp)
+    if hicogeo == -1:
+        mainLogger.warning("Failed to complete conversion to L1b")
+    else:
+        mainLogger.info("Writing to netcdf...")
+        # Record processed data
+        sceneID = str(hc.L0.header['ID'])
+        scene_location = GetLocation(sceneID, mainLogger)
+        with Dataset(pArgs.ofile, 'w', format='NETCDF4') as root_grp:
+            ncGroups = FillNC(root_grp, scene_location=scene_location)
+            hc.WriteRadFile(ncGroups.productsGrp, ncGroups.periodGrp)
+            # hc.FillWriteFlags(usefulGroups.slaGrp) -- seemingly not needed to be discarded(?)
+            hicogeo.write_geo_nc(ncGroups.navGrp, ncGroups.calGrp)
 
-    mainLogger.info("NC File created.")
+        mainLogger.info("NC File created.")
 if __name__ == '__main__':
     HicoMain(sys.argv[1:])

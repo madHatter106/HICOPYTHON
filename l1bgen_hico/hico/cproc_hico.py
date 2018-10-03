@@ -46,7 +46,11 @@ class hico_geo:
         bs[2] = boresight[2]*deg2Rad
         r_hico_bs = bore.bore_sight(bs)
 
-        (quat_info, quat, pvq_data) = rquat.read_pos_vel_quat(ifile)
+        quat_stuff = rquat.read_pos_vel_quat(ifile)
+        if isinstance(quat_stuff, tuple):
+            quat_info, quat, pvq_data = quat_stuff
+        else:
+            return -1
         nsamples = np.int(quat_info['Requested number of pixels'])
         self.iss_orientation = quat_info['ISS orientation']
     #    print('The CSV file is...' + quat_info['Source CSV file'])
@@ -244,7 +248,7 @@ class hico_geo:
 
         calib_grp.hico_orientation_from_quaternion = self.iss_orientation
 
-def run_geo():
+"""def run_geo():
     import argparse
 
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description='''\
@@ -310,3 +314,4 @@ def run_geo():
     print("Done")
 
 if __name__ == '__main__': run_geo()
+"""
