@@ -1,0 +1,2 @@
+class PVQException(ValueError):
+    pass

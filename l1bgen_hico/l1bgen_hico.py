@@ -2,6 +2,7 @@
 from hico.HicoL0toL1B import HicoL0toL1b
 from hico.makePosVelQuatCsv import MakePosVelQuatCSV
 from hico.cproc_hico import hico_geo
+from hico.exceptions import PVQException
 from netCDF4 import Dataset
 from datetime import datetime as DT
 import argparse
@@ -136,11 +137,12 @@ def FillNC(root_grp_ptr, scene_location):
         var.long_name = var.name.replace('_', ' ').rstrip('s')
     retGps.navGrp = nav_grp
     retGps.productsGrp = root_grp_ptr.createGroup('products')
-    lt = retGps.productsGrp.createVariable('Lt', 'u2', ('scan_lines', 'samples', 'bands'))
+    lt = retGps.productsGrp.createVariable('Lt', 'u2', ('scan_lines',
+                                                        'samples', 'bands'))
     lt.scale_factor = float32([0.02])
     lt.add_offset = float32(0)
     lt.units = "W/m^2/micrometer/sr"
-    #lt.valid_range = nparray([0, 16384], dtype='u2')
+    # lt.valid_range = nparray([0, 16384], dtype='u2')
     lt.long_name = "HICO Top of Atmosphere"
     lt.wavelength_units = "nanometers"
     # lt.createVariable('fwhm', 'f4', ('bands',))
@@ -149,7 +151,8 @@ def FillNC(root_grp_ptr, scene_location):
     lt.wavelengths = npones((128,), dtype='f4')
     lt.wavelength_units = "nanometers"
     retGps.slaGrp = root_grp_ptr.createGroup('scan_line_attributes')
-    retGps.slaGrp.createVariable('scan_quality_flags', 'u1', ('scan_lines', 'samples'))
+    retGps.slaGrp.createVariable('scan_quality_flags', 'u1', ('scan_lines',
+                                                              'samples'))
     # Create metadata group and sub-groups
     meta_grp = root_grp_ptr.createGroup('metadata')
     pl_info_grp = meta_grp.createGroup("FGDC/Identification_Information/Platform_and_Instrument_Identification")
@@ -179,16 +182,19 @@ def HicoMain(args):
     hc = HicoL0toL1b(pArgs, parentLoggerName=mainLogger.name)
     # pass the hlc object to the pvq maker
     if not os.path.exists(pvqcsv):
-        MakePosVelQuatCSV(hc, outputFileName=pvqcsv, doNavTimeCorrection=navoffset)
+        try:
+            MakePosVelQuatCSV(hc, outputFileName=pvqcsv,
+                              doNavTimeCorrection=navoffset)
+        except UserWarning as uw:
+            mainLogger.warning(uw)
+
     # convert raw count to data
     hc.ConvertRaw2Rad()
     # geolocation
     mainLogger.info("Running geolocation...")
-    hicogeo = hico_geo(pvqcsv, earth_orient_file, leap_sec_file,
-                       pArgs.boresight)
-    if hicogeo == -1:
-        mainLogger.warning("Failed to complete conversion to L1b")
-    else:
+    try:
+        hicogeo = hico_geo(pvqcsv, earth_orient_file, leap_sec_file,
+                           pArgs.boresight)
         mainLogger.info("Writing to netcdf...")
         # Record processed data
         sceneID = str(hc.L0.header['ID'])
@@ -196,9 +202,11 @@ def HicoMain(args):
         with Dataset(pArgs.ofile, 'w', format='NETCDF4') as root_grp:
             ncGroups = FillNC(root_grp, scene_location=scene_location)
             hc.WriteRadFile(ncGroups.productsGrp, ncGroups.periodGrp)
-            # hc.FillWriteFlags(usefulGroups.slaGrp) -- seemingly not needed to be discarded(?)
             hicogeo.write_geo_nc(ncGroups.navGrp, ncGroups.calGrp)
 
-        mainLogger.info("NC File created.")
+        mainLogger.info("NC file created.")
+    except PVQException as pvqe:
+        mainLogger.error(pvqe, exc_info=True)
+        mainLogger.info("Failed to create NC file")
 if __name__ == '__main__':
     HicoMain(sys.argv[1:])
